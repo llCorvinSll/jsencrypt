@@ -90,7 +90,6 @@ BigInteger.prototype.F1 = BI_FP-dbits;
 BigInteger.prototype.F2 = 2*dbits-BI_FP;
 
 // Digit conversions
-var BI_RM = "0123456789abcdefghijklmnopqrstuvwxyz";
 var BI_RC = new Array();
 var rr,vv;
 rr = "0".charCodeAt(0);
@@ -100,7 +99,7 @@ for(vv = 10; vv < 36; ++vv) BI_RC[rr++] = vv;
 rr = "A".charCodeAt(0);
 for(vv = 10; vv < 36; ++vv) BI_RC[rr++] = vv;
 
-function int2char(n) { return BI_RM.charAt(n); }
+
 function intAt(s,i) {
   var c = BI_RC[s.charCodeAt(i)];
   return (c==null)?-1:c;

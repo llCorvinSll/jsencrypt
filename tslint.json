@@ -5,6 +5,7 @@
       true,
       2
     ],
+    "no-bitwise": false,
     "ordered-imports": false,
     "typedef-whitespace": {
       "options": [
