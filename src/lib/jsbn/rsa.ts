@@ -1,0 +1,247 @@
+// Depends on jsbn.js and rng.js
+
+// Version 1.1: support utf-8 encoding in pkcs1pad2
+
+// convert a (hex) string to a bignum object
+import {SecureRandom} from "./rng";
+
+function parseBigInt(str:string, r:number) {
+    return new BigInteger(str, r);
+}
+
+function linebrk(s:string, n:number) {
+    let ret = "";
+    let i = 0;
+    while (i + n < s.length) {
+        ret += s.substring(i, i + n) + "\n";
+        i += n;
+    }
+    return ret + s.substring(i, s.length);
+}
+
+function byte2Hex(b:number):string {
+    if (b < 0x10) {
+        return "0" + b.toString(16);
+    } else {
+        return b.toString(16);
+    }
+}
+
+// PKCS#1 (type 2, random) pad input string s to n bytes, and return a bigint
+function pkcs1pad2(s:string, n:number) {
+    if (n < s.length + 11) { // TODO: fix for utf-8
+        console.error("Message too long for RSA");
+        return null;
+    }
+    const ba = [];
+    let i = s.length - 1;
+    while (i >= 0 && n > 0) {
+        const c = s.charCodeAt(i--);
+        if (c < 128) { // encode using utf-8
+            ba[--n] = c;
+        } else if ((c > 127) && (c < 2048)) {
+            ba[--n] = (c & 63) | 128;
+            ba[--n] = (c >> 6) | 192;
+        } else {
+            ba[--n] = (c & 63) | 128;
+            ba[--n] = ((c >> 6) & 63) | 128;
+            ba[--n] = (c >> 12) | 224;
+        }
+    }
+    ba[--n] = 0;
+    const rng = new SecureRandom();
+    const x = [];
+    while (n > 2) { // random non-zero pad
+        x[0] = 0;
+        while (x[0] === 0) {
+            rng.nextBytes(x);
+        }
+        ba[--n] = x[0];
+    }
+    ba[--n] = 2;
+    ba[--n] = 0;
+    return new BigInteger(ba);
+}
+
+// Undo PKCS#1 (type 2, random) padding and, if valid, return the plaintext
+function pkcs1unpad2(d, n) {
+    const b = d.toByteArray();
+    let i = 0;
+    while (i < b.length && b[i] === 0) {
+        ++i;
+    }
+    if (b.length - i !== n - 1 || b[i] !== 2) {
+        return null;
+    }
+    ++i;
+    while (b[i] !== 0) {
+        if (++i >= b.length) {
+            return null;
+        }
+    }
+    let ret = "";
+    while (++i < b.length) {
+        const c = b[i] & 255;
+        if (c < 128) { // utf-8 decode
+            ret += String.fromCharCode(c);
+        } else if ((c > 191) && (c < 224)) {
+            ret += String.fromCharCode(((c & 31) << 6) | (b[i + 1] & 63));
+            ++i;
+        } else {
+            ret += String.fromCharCode(((c & 15) << 12) | ((b[i + 1] & 63) << 6) | (b[i + 2] & 63));
+            i += 2;
+        }
+    }
+    return ret;
+}
+
+class RSAKey {
+    //#region PUBLIC
+    // RSAKey.prototype.encrypt = RSAEncrypt;
+    // Return the PKCS#1 RSA encryption of "text" as an even-length hex string
+    public encrypt(text:string) {
+        const m = pkcs1pad2(text, (this.n.bitLength() + 7) >> 3);
+        if (m == null) {
+            return null;
+        }
+        const c = this.doPublic(m);
+        if (c == null) {
+            return null;
+        }
+        const h = c.toString(16);
+        if ((h.length & 1) === 0) {
+            return h;
+        } else {
+            return "0" + h;
+        }
+    }
+
+    // RSAKey.prototype.setPublic = RSASetPublic;
+    // Set the public key fields N and e from hex strings
+    public setPublic(N, E) {
+        if (N != null && E != null && N.length > 0 && E.length > 0) {
+            this.n = parseBigInt(N, 16);
+            this.e = parseInt(E, 16);
+        } else {
+            console.error("Invalid RSA public key");
+        }
+    }
+
+    // RSAKey.prototype.setPrivate = RSASetPrivate;
+    // Set the private key fields N, e, and d from hex strings
+    public setPrivate(N,E,D) {
+        if (N != null && E != null && N.length > 0 && E.length > 0) {
+            this.n = parseBigInt(N,16);
+            this.e = parseInt(E,16);
+            this.d = parseBigInt(D,16);
+        } else {
+            console.error("Invalid RSA private key");
+        }
+    }
+
+    // RSAKey.prototype.setPrivateEx = RSASetPrivateEx;
+    // Set the private key fields N, e, d and CRT params from hex strings
+    public setPrivateEx(N, E, D, P, Q, DP, DQ, C) {
+        if (N != null && E != null && N.length > 0 && E.length > 0) {
+            this.n = parseBigInt(N, 16);
+            this.e = parseInt(E, 16);
+            this.d = parseBigInt(D, 16);
+            this.p = parseBigInt(P, 16);
+            this.q = parseBigInt(Q, 16);
+            this.dmp1 = parseBigInt(DP, 16);
+            this.dmq1 = parseBigInt(DQ, 16);
+            this.coeff = parseBigInt(C, 16);
+        } else {
+            console.error("Invalid RSA private key");
+        }
+    }
+
+    // RSAKey.prototype.generate = RSAGenerate;
+    // Generate a new random private key B bits long, using public expt E
+    public generate(B, E) {
+        const rng = new SecureRandom();
+        const qs = B >> 1;
+        this.e = parseInt(E, 16);
+        const ee = new BigInteger(E, 16);
+        for (;;) {
+            for (;;) {
+                this.p = new BigInteger(B - qs, 1, rng);
+                if (this.p.subtract(BigInteger.ONE).gcd(ee).compareTo(BigInteger.ONE) === 0 && this.p.isProbablePrime(10)) {
+                    break;
+                }
+            }
+            for (;;) {
+                this.q = new BigInteger(qs,1,rng);
+                if (this.q.subtract(BigInteger.ONE).gcd(ee).compareTo(BigInteger.ONE) === 0 && this.q.isProbablePrime(10)) {
+                    break;
+                }
+            }
+            if (this.p.compareTo(this.q) <= 0) {
+                const t = this.p;
+                this.p = this.q;
+                this.q = t;
+            }
+            const p1 = this.p.subtract(BigInteger.ONE);
+            const q1 = this.q.subtract(BigInteger.ONE);
+            const phi = p1.multiply(q1);
+            if (phi.gcd(ee).compareTo(BigInteger.ONE) === 0) {
+                this.n = this.p.multiply(this.q);
+                this.d = ee.modInverse(phi);
+                this.dmp1 = this.d.mod(p1);
+                this.dmq1 = this.d.mod(q1);
+                this.coeff = this.q.modInverse(this.p);
+                break;
+            }
+        }
+    }
+
+    // RSAKey.prototype.decrypt = RSADecrypt;
+    // Return the PKCS#1 RSA decryption of "ctext".
+    // "ctext" is an even-length hex string and the output is a plain string.
+    public decrypt(ctext:string) {
+        const c = parseBigInt(ctext, 16);
+        const m = this.doPrivate(c);
+        if (m == null) {
+            return null;
+        }
+        return pkcs1unpad2(m, (this.n.bitLength() + 7) >> 3);
+    }
+
+    //#endregion
+
+    //#region PROTECTED
+    // RSAKey.prototype.doPublic = RSADoPublic;
+    // Perform raw public operation on "x": return x^e (mod n)
+    protected doPublic(x) {
+        return x.modPowInt(this.e, this.n);
+    }
+
+    // RSAKey.prototype.doPrivate = RSADoPrivate;
+    // Perform raw private operation on "x": return x^d (mod n)
+    protected doPrivate(x) {
+        if (this.p == null || this.q == null) {
+            return x.modPow(this.d, this.n);
+        }
+
+        // TODO: re-calculate any missing CRT params
+        let xp = x.mod(this.p).modPow(this.dmp1, this.p);
+        const xq = x.mod(this.q).modPow(this.dmq1, this.q);
+
+        while (xp.compareTo(xq) < 0) {
+            xp = xp.add(this.p);
+        }
+        return xp.subtract(xq).multiply(this.coeff).mod(this.p).multiply(this.q).add(xq);
+    }
+    //#endregion
+
+    //#region FIELDS
+    private n = null;
+    private e = 0;
+    private d = null;
+    private p = null;
+    private q = null;
+    private dmp1 = null;
+    private dmq1 = null;
+    private coeff = null;
+    //#endregion
+}
