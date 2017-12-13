@@ -9,17 +9,7 @@
 
 
 
-// (public) return value as integer
-function bnIntValue() {
-  if(this.s < 0) {
-    if(this.t == 1) return this[0]-this.DV;
-    else if(this.t == 0) return -1;
-  }
-  else if(this.t == 1) return this[0];
-  else if(this.t == 0) return 0;
-  // assumes 16 < DB < 32
-  return ((this[1]&((1<<(32-this.DB))-1))<<this.DB)|this[0];
-}
+
 
 // (public) return value as byte
 function bnByteValue() { return (this.t==0)?this.s:(this[0]<<24)>>24; }
@@ -31,20 +21,7 @@ function bnShortValue() { return (this.t==0)?this.s:(this[0]<<16)>>16; }
 
 
 
-// (protected) convert to radix string
-function bnpToRadix(b) {
-  if(b == null) b = 10;
-  if(this.signum() == 0 || b < 2 || b > 36) return "0";
-  var cs = this.chunkSize(b);
-  var a = Math.pow(b,cs);
-  var d = nbv(a), y = nbi(), z = nbi(), r = "";
-  this.divRemTo(d,y,z);
-  while(y.signum() > 0) {
-    r = (a+z.intValue()).toString(b).substr(1) + r;
-    y.divRemTo(d,y,z);
-  }
-  return z.intValue().toString(b) + r;
-}
+
 
 
 
@@ -163,86 +140,17 @@ NullExp.prototype.sqrTo = nSqrTo;
 // (public) this^e
 function bnPow(e) { return this.exp(e,new NullExp()); }
 
-// (protected) r = lower n words of "this * a", a.t <= n
-// "this" should be the larger one if appropriate.
-function bnpMultiplyLowerTo(a,n,r) {
-  var i = Math.min(this.t+a.t,n);
-  r.s = 0; // assumes a,this >= 0
-  r.t = i;
-  while(i > 0) r[--i] = 0;
-  var j;
-  for(j = r.t-this.t; i < j; ++i) r[i+this.t] = this.am(0,a[i],r,i,0,this.t);
-  for(j = Math.min(a.t,n); i < j; ++i) this.am(0,a[i],r,i,0,n-i);
-  r.clamp();
-}
-
-// (protected) r = "this * a" without lower n words, n > 0
-// "this" should be the larger one if appropriate.
-function bnpMultiplyUpperTo(a,n,r) {
-  --n;
-  var i = r.t = this.t+a.t-n;
-  r.s = 0; // assumes a,this >= 0
-  while(--i >= 0) r[i] = 0;
-  for(i = Math.max(n-this.t,0); i < a.t; ++i)
-    r[this.t+i-n] = this.am(n-i,a[i],r,0,0,this.t+i-n);
-  r.clamp();
-  r.drShiftTo(1,r);
-}
-
-// Barrett modular reduction
-function Barrett(m) {
-  // setup Barrett
-  this.r2 = nbi();
-  this.q3 = nbi();
-  BigInteger.ONE.dlShiftTo(2*m.t,this.r2);
-  this.mu = this.r2.divide(m);
-  this.m = m;
-}
-
-function barrettConvert(x) {
-  if(x.s < 0 || x.t > 2*this.m.t) return x.mod(this.m);
-  else if(x.compareTo(this.m) < 0) return x;
-  else { var r = nbi(); x.copyTo(r); this.reduce(r); return r; }
-}
-
-function barrettRevert(x) { return x; }
-
-// x = x mod m (HAC 14.42)
-function barrettReduce(x) {
-  x.drShiftTo(this.m.t-1,this.r2);
-  if(x.t > this.m.t+1) { x.t = this.m.t+1; x.clamp(); }
-  this.mu.multiplyUpperTo(this.r2,this.m.t+1,this.q3);
-  this.m.multiplyLowerTo(this.q3,this.m.t+1,this.r2);
-  while(x.compareTo(this.r2) < 0) x.dAddOffset(1,this.m.t+1);
-  x.subTo(this.r2,x);
-  while(x.compareTo(this.m) >= 0) x.subTo(this.m,x);
-}
-
-// r = x^2 mod m; x != r
-function barrettSqrTo(x,r) { x.squareTo(r); this.reduce(r); }
-
-// r = x*y mod m; x,y != r
-function barrettMulTo(x,y,r) { x.multiplyTo(y,r); this.reduce(r); }
-
-Barrett.prototype.convert = barrettConvert;
-Barrett.prototype.revert = barrettRevert;
-Barrett.prototype.reduce = barrettReduce;
-Barrett.prototype.mulTo = barrettMulTo;
-Barrett.prototype.sqrTo = barrettSqrTo;
 
 
 
 
 
-// (protected) this % n, n < 2^26
-function bnpModInt(n) {
-  if(n <= 0) return 0;
-  var d = this.DV%n, r = (this.s<0)?n-1:0;
-  if(this.t > 0)
-    if(d == 0) r = this[0]%n;
-    else for(var i = this.t-1; i >= 0; --i) r = (d*r+this[i])%n;
-  return r;
-}
+
+
+
+
+
+
 
 
 
@@ -253,7 +161,7 @@ function bnpModInt(n) {
 
 // protected
 // BigInteger.prototype.chunkSize = bnpChunkSize;
-BigInteger.prototype.toRadix = bnpToRadix;
+// BigInteger.prototype.toRadix = bnpToRadix;
 // BigInteger.prototype.fromRadix = bnpFromRadix;
 // BigInteger.prototype.fromNumber = bnpFromNumber;
 // BigInteger.prototype.bitwiseTo = bnpBitwiseTo;
@@ -261,14 +169,14 @@ BigInteger.prototype.changeBit = bnpChangeBit;
 // BigInteger.prototype.addTo = bnpAddTo;
 // BigInteger.prototype.dMultiply = bnpDMultiply;
 // BigInteger.prototype.dAddOffset = bnpDAddOffset;
-BigInteger.prototype.multiplyLowerTo = bnpMultiplyLowerTo;
-BigInteger.prototype.multiplyUpperTo = bnpMultiplyUpperTo;
-BigInteger.prototype.modInt = bnpModInt;
+// BigInteger.prototype.multiplyLowerTo = bnpMultiplyLowerTo;
+// BigInteger.prototype.multiplyUpperTo = bnpMultiplyUpperTo;
+// BigInteger.prototype.modInt = bnpModInt;
 // BigInteger.prototype.millerRabin = bnpMillerRabin;
 
 // public
 // BigInteger.prototype.clone = bnClone;
-BigInteger.prototype.intValue = bnIntValue;
+// BigInteger.prototype.intValue = bnIntValue;
 BigInteger.prototype.byteValue = bnByteValue;
 BigInteger.prototype.shortValue = bnShortValue;
 // BigInteger.prototype.signum = bnSigNum;

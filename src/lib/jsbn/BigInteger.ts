@@ -3,11 +3,12 @@
 // Basic JavaScript BN library - subset useful for RSA encryption.
 
 
-import {lbit, nbits} from "./utils";
+import {int2char, lbit, nbits} from "./utils";
 import {SecureRandom} from "./rng";
 import {ClassicReduction} from "./reductions/Classic";
 import {IReduction} from "./reductions/IReduction";
 import {MontgomeryReduction} from "./reductions/Montgomery";
+import {BarrettReduction} from "./reductions/Barrett";
 
 const lowprimes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109,
     113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257,
@@ -200,7 +201,7 @@ export class BigInteger {
         let i = e.bitLength();
         let k;
         let r = nbv(1);
-        let z;
+        let z:IReduction;
         if (i <= 0) {
             return r;
         } else if (i < 18) {
@@ -217,13 +218,13 @@ export class BigInteger {
         if (i < 8) {
             z = new ClassicReduction(m);
         } else if (m.isEven()) {
-            z = new Barrett(m);
+            z = new BarrettReduction(m);
         } else {
             z = new MontgomeryReduction(m);
         }
 
         // precomputation
-        const g = [];
+        const g:BigInteger[] = [];
         let n = 3;
         const k1 = k - 1;
         const km = (1 << k) - 1;
@@ -285,7 +286,7 @@ export class BigInteger {
 
     // BigInteger.prototype.mod = bnMod;
     // (public) this mod a
-    public mod(a) {
+    public mod(a:BigInteger) {
         const r = nbi();
         this.abs().divRemTo(a, null, r);
         if (this.s < 0 && r.compareTo(BigInteger.ZERO) > 0) {
@@ -777,6 +778,230 @@ export class BigInteger {
     }
 
 
+    // BigInteger.prototype.fromNumberAsync = bnpFromNumberAsync;
+    // (protected) alternate constructor
+    public fromNumberAsync(a:number, b:number|SecureRandom, c:SecureRandom, callback:() => void) {
+        if ("number" == typeof b) {
+            if (a < 2) {
+                this.fromInt(1);
+            } else {
+                this.fromNumber(a, c);
+                if (!this.testBit(a - 1)) {
+                    this.bitwiseTo(BigInteger.ONE.shiftLeft(a - 1), op_or, this);
+                }
+                if (this.isEven()) {
+                    this.dAddOffset(1, 0);
+                }
+                const bnp = this;
+                const bnpfn1 = function () {
+                    bnp.dAddOffset(2, 0);
+                    if (bnp.bitLength() > a) {
+                        bnp.subTo(BigInteger.ONE.shiftLeft(a - 1), bnp);
+                    }
+                    if (bnp.isProbablePrime(b)) {
+                        setTimeout(function () {
+                            callback();
+                        }, 0); // escape
+                    } else {
+                        setTimeout(bnpfn1, 0);
+                    }
+                };
+                setTimeout(bnpfn1, 0);
+            }
+        } else {
+            const x:number[] = [];
+            const t = a & 7;
+            x.length = (a >> 3) + 1;
+            b.nextBytes(x);
+            if (t > 0) {
+                x[0] &= ((1 << t) - 1);
+            } else {
+                x[0] = 0;
+            }
+            this.fromString(x, 256);
+        }
+    }
+
+
+    // BigInteger.prototype.dAddOffset = bnpDAddOffset;
+    // (protected) this += n << w words, this >= 0
+    public dAddOffset(n:number, w:number) {
+        if (n == 0) {
+            return;
+        }
+        while (this.t <= w) {
+            this[this.t++] = 0;
+        }
+        this[w] += n;
+        while (this[w] >= this.DV) {
+            this[w] -= this.DV;
+            if (++w >= this.t) {
+                this[this.t++] = 0;
+            }
+            ++this[w];
+        }
+    }
+
+    // BigInteger.prototype.multiplyUpperTo = bnpMultiplyUpperTo;
+    // (protected) r = "this * a" without lower n words, n > 0
+    // "this" should be the larger one if appropriate.
+    public multiplyUpperTo(a:BigInteger, n:number, r:BigInteger) {
+        --n;
+        let i = r.t = this.t + a.t - n;
+        r.s = 0; // assumes a,this >= 0
+        while (--i >= 0) {
+            r[i] = 0;
+        }
+        for (let i = Math.max(n - this.t, 0); i < a.t; ++i) {
+            r[this.t + i - n] = this.am(n - i, a[i], r, 0, 0, this.t + i - n);
+        }
+        r.clamp();
+        r.drShiftTo(1, r);
+    }
+
+    // BigInteger.prototype.multiplyLowerTo = bnpMultiplyLowerTo;
+    // (protected) r = lower n words of "this * a", a.t <= n
+    // "this" should be the larger one if appropriate.
+    public multiplyLowerTo(a:BigInteger, n:number, r:BigInteger) {
+        let i = Math.min(this.t + a.t, n);
+        r.s = 0; // assumes a,this >= 0
+        r.t = i;
+        while (i > 0) {
+            r[--i] = 0;
+        }
+        let j;
+        for (j = r.t - this.t; i < j; ++i) {
+            r[i + this.t] = this.am(0, a[i], r, i, 0, this.t);
+        }
+        for (j = Math.min(a.t, n); i < j; ++i) {
+            this.am(0, a[i], r, i, 0, n - i);
+        }
+        r.clamp();
+    }
+
+    // BigInteger.prototype.toString = bnToString;
+    // (public) return string representation in given radix
+    public toString(b:number):string {
+        if (this.s < 0) {
+            return "-" + this.negate().toString(b);
+        }
+        let k;
+        if (b == 16) {
+            k = 4;
+        } else if (b == 8) {
+            k = 3;
+        } else if (b == 2) {
+            k = 1;
+        } else if (b == 32) {
+            k = 5;
+        } else if (b == 4) {
+            k = 2;
+        } else {
+            return this.toRadix(b);
+        }
+        const km = (1 << k) - 1;
+        let d;
+        let m = false;
+        let r = "";
+        let i = this.t;
+        let p = this.DB - (i * this.DB) % k;
+        if (i-- > 0) {
+            if (p < this.DB && (d = this[i] >> p) > 0) {
+                m = true;
+                r = int2char(d);
+            }
+            while (i >= 0) {
+                if (p < k) {
+                    d = (this[i] & ((1 << p) - 1)) << (k - p);
+                    d |= this[--i] >> (p += this.DB - k);
+                } else {
+                    d = (this[i] >> (p -= k)) & km;
+                    if (p <= 0) {
+                        p += this.DB;
+                        --i;
+                    }
+                }
+                if (d > 0) {
+                    m = true;
+                }
+                if (m) {
+                    r += int2char(d);
+                }
+            }
+        }
+        return m ? r : "0";
+    }
+
+    // BigInteger.prototype.intValue = bnIntValue;
+    // (public) return value as integer
+    public intValue() {
+        if (this.s < 0) {
+            if (this.t == 1) {
+                return this[0] - this.DV;
+            } else if (this.t == 0) {
+                return -1;
+            }
+        } else if (this.t == 1) {
+            return this[0];
+        } else if (this.t == 0) {
+            return 0;
+        }
+        // assumes 16 < DB < 32
+        return ((this[1] & ((1 << (32 - this.DB)) - 1)) << this.DB) | this[0];
+    }
+
+    // BigInteger.prototype.gcda = bnGCDAsync;
+    public gcda(a:BigInteger, callback:(x:BigInteger) => void) {
+        let x = (this.s < 0) ? this.negate() : this.clone();
+        let y = (a.s < 0) ? a.negate() : a.clone();
+        if (x.compareTo(y) < 0) {
+            const t = x;
+            x = y;
+            y = t;
+        }
+        let i = x.getLowestSetBit();
+        let g = y.getLowestSetBit();
+        if (g < 0) {
+            callback(x);
+            return;
+        }
+        if (i < g) {
+            g = i;
+        }
+        if (g > 0) {
+            x.rShiftTo(g, x);
+            y.rShiftTo(g, y);
+        }
+        // Workhorse of the algorithm, gets called 200 - 800 times per 512 bit keygen.
+        const gcda1 = function () {
+            if ((i = x.getLowestSetBit()) > 0) {
+                x.rShiftTo(i, x);
+            }
+            if ((i = y.getLowestSetBit()) > 0) {
+                y.rShiftTo(i, y);
+            }
+            if (x.compareTo(y) >= 0) {
+                x.subTo(y, x);
+                x.rShiftTo(1, x);
+            } else {
+                y.subTo(x, y);
+                y.rShiftTo(1, y);
+            }
+            if (!(x.signum() > 0)) {
+                if (g > 0) {
+                    y.lShiftTo(g, y);
+                }
+                setTimeout(function () {
+                    callback(y);
+                }, 0); // escape
+            } else {
+                setTimeout(gcda1, 0);
+            }
+        };
+        setTimeout(gcda1, 10);
+    }
+
+
     //#endregion PUBLIC
 
     //#region PROTECTED
@@ -879,7 +1104,7 @@ export class BigInteger {
 
     // BigInteger.prototype.fromRadix = bnpFromRadix;
     // (protected) convert from radix string
-    protected fromRadix(s:string, b:number) {
+    protected fromRadix(s:string|number[], b:number) {
         this.fromInt(0);
         if (b == null) {
             b = 10;
@@ -1087,24 +1312,6 @@ export class BigInteger {
         this.clamp();
     }
 
-    // BigInteger.prototype.dAddOffset = bnpDAddOffset;
-    // (protected) this += n << w words, this >= 0
-    protected dAddOffset(n:number, w:number) {
-        if (n == 0) {
-            return;
-        }
-        while (this.t <= w) {
-            this[this.t++] = 0;
-        }
-        this[w] += n;
-        while (this[w] >= this.DV) {
-            this[w] -= this.DV;
-            if (++w >= this.t) {
-                this[this.t++] = 0;
-            }
-            ++this[w];
-        }
-    }
 
     // BigInteger.prototype.addTo = bnpAddTo;
     // (protected) r = this + a
@@ -1189,6 +1396,49 @@ export class BigInteger {
             this.rShiftTo(n, r);
         }
         return r;
+    }
+
+    // BigInteger.prototype.modInt = bnpModInt;
+    // (protected) this % n, n < 2^26
+    public modInt(n:number) {
+        if (n <= 0) {
+            return 0;
+        }
+        const d = this.DV % n;
+        let r = (this.s < 0) ? n - 1 : 0;
+        if (this.t > 0) {
+            if (d == 0) {
+                r = this[0] % n;
+            } else {
+                for (let i = this.t - 1; i >= 0; --i) {
+                    r = (d * r + this[i]) % n;
+                }
+            }
+        }
+        return r;
+    }
+
+    // BigInteger.prototype.toRadix = bnpToRadix;
+    // (protected) convert to radix string
+    public toRadix(b:number) {
+        if (b == null) {
+            b = 10;
+        }
+        if (this.signum() == 0 || b < 2 || b > 36) {
+            return "0";
+        }
+        const cs = this.chunkSize(b);
+        const a = Math.pow(b, cs);
+        const d = nbv(a);
+        const y = nbi();
+        const z = nbi();
+        let r = "";
+        this.divRemTo(d, y, z);
+        while (y.signum() > 0) {
+            r = (a + z.intValue()).toString(b).substr(1) + r;
+            y.divRemTo(d, y, z);
+        }
+        return z.intValue().toString(b) + r;
     }
 
 

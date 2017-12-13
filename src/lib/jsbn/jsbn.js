@@ -111,35 +111,7 @@ for(vv = 10; vv < 36; ++vv) BI_RC[rr++] = vv;
 
 
 
-// (public) return string representation in given radix
-function bnToString(b) {
-  if(this.s < 0) return "-"+this.negate().toString(b);
-  var k;
-  if(b == 16) k = 4;
-  else if(b == 8) k = 3;
-  else if(b == 2) k = 1;
-  else if(b == 32) k = 5;
-  else if(b == 4) k = 2;
-  else return this.toRadix(b);
-  var km = (1<<k)-1, d, m = false, r = "", i = this.t;
-  var p = this.DB-(i*this.DB)%k;
-  if(i-- > 0) {
-    if(p < this.DB && (d = this[i]>>p) > 0) { m = true; r = int2char(d); }
-    while(i >= 0) {
-      if(p < k) {
-        d = (this[i]&((1<<p)-1))<<(k-p);
-        d |= this[--i]>>(p+=this.DB-k);
-      }
-      else {
-        d = (this[i]>>(p-=k))&km;
-        if(p <= 0) { p += this.DB; --i; }
-      }
-      if(d > 0) m = true;
-      if(m) r += int2char(d);
-    }
-  }
-  return m?r:"0";
-}
+
 
 
 
@@ -196,7 +168,7 @@ function bnToString(b) {
 // BigInteger.prototype.exp = bnpExp;
 
 // public
-BigInteger.prototype.toString = bnToString;
+// BigInteger.prototype.toString = bnToString;
 // BigInteger.prototype.negate = bnNegate;
 // BigInteger.prototype.abs = bnAbs;
 // BigInteger.prototype.compareTo = bnCompareTo;

@@ -16,7 +16,7 @@ export class MontgomeryReduction implements IReduction {
 
     // Montgomery.prototype.convert = montConvert;
     // xR mod m
-    public convert(x:BigInteger) {
+    public convert(x:BigInteger):BigInteger {
         const r = nbi();
         x.abs().dlShiftTo(this.m.t, r);
         r.divRemTo(this.m, null, r);
