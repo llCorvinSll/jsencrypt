@@ -6,7 +6,10 @@
       2
     ],
     "no-bitwise": false,
+    "triple-equals": false,
     "ordered-imports": false,
+    "no-console": false,
+    "no-conditional-assignment": false,
     "typedef-whitespace": {
       "options": [
         {

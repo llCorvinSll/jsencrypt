@@ -4,27 +4,10 @@
 
 // convert a (hex) string to a bignum object
 import {SecureRandom} from "./rng";
+import {BigInteger} from "./BigInteger";
 
-function parseBigInt(str:string, r:number) {
-    return new BigInteger(str, r);
-}
-
-function linebrk(s:string, n:number) {
-    let ret = "";
-    let i = 0;
-    while (i + n < s.length) {
-        ret += s.substring(i, i + n) + "\n";
-        i += n;
-    }
-    return ret + s.substring(i, s.length);
-}
-
-function byte2Hex(b:number):string {
-    if (b < 0x10) {
-        return "0" + b.toString(16);
-    } else {
-        return b.toString(16);
-    }
+function parseBigInt(str:string, radix:number) {
+    return new BigInteger(str, radix);
 }
 
 // PKCS#1 (type 2, random) pad input string s to n bytes, and return a bigint
@@ -64,7 +47,7 @@ function pkcs1pad2(s:string, n:number) {
 }
 
 // Undo PKCS#1 (type 2, random) padding and, if valid, return the plaintext
-function pkcs1unpad2(d, n) {
+function pkcs1unpad2(d:BigInteger, n:number) {
     const b = d.toByteArray();
     let i = 0;
     while (i < b.length && b[i] === 0) {
@@ -95,7 +78,7 @@ function pkcs1unpad2(d, n) {
     return ret;
 }
 
-class RSAKey {
+export class RSAKey {
     //#region PUBLIC
     // RSAKey.prototype.encrypt = RSAEncrypt;
     // Return the PKCS#1 RSA encryption of "text" as an even-length hex string
@@ -118,7 +101,7 @@ class RSAKey {
 
     // RSAKey.prototype.setPublic = RSASetPublic;
     // Set the public key fields N and e from hex strings
-    public setPublic(N, E) {
+    public setPublic(N:string, E:string) {
         if (N != null && E != null && N.length > 0 && E.length > 0) {
             this.n = parseBigInt(N, 16);
             this.e = parseInt(E, 16);
@@ -129,11 +112,11 @@ class RSAKey {
 
     // RSAKey.prototype.setPrivate = RSASetPrivate;
     // Set the private key fields N, e, and d from hex strings
-    public setPrivate(N,E,D) {
+    public setPrivate(N:string, E:string, D:string) {
         if (N != null && E != null && N.length > 0 && E.length > 0) {
-            this.n = parseBigInt(N,16);
-            this.e = parseInt(E,16);
-            this.d = parseBigInt(D,16);
+            this.n = parseBigInt(N, 16);
+            this.e = parseInt(E, 16);
+            this.d = parseBigInt(D, 16);
         } else {
             console.error("Invalid RSA private key");
         }
@@ -141,7 +124,7 @@ class RSAKey {
 
     // RSAKey.prototype.setPrivateEx = RSASetPrivateEx;
     // Set the private key fields N, e, d and CRT params from hex strings
-    public setPrivateEx(N, E, D, P, Q, DP, DQ, C) {
+    public setPrivateEx(N:string, E:string, D:string, P:string, Q:string, DP:string, DQ:string, C:string) {
         if (N != null && E != null && N.length > 0 && E.length > 0) {
             this.n = parseBigInt(N, 16);
             this.e = parseInt(E, 16);
@@ -158,7 +141,7 @@ class RSAKey {
 
     // RSAKey.prototype.generate = RSAGenerate;
     // Generate a new random private key B bits long, using public expt E
-    public generate(B, E) {
+    public generate(B:number, E:string) {
         const rng = new SecureRandom();
         const qs = B >> 1;
         this.e = parseInt(E, 16);
@@ -171,7 +154,7 @@ class RSAKey {
                 }
             }
             for (;;) {
-                this.q = new BigInteger(qs,1,rng);
+                this.q = new BigInteger(qs, 1, rng);
                 if (this.q.subtract(BigInteger.ONE).gcd(ee).compareTo(BigInteger.ONE) === 0 && this.q.isProbablePrime(10)) {
                     break;
                 }
@@ -212,13 +195,13 @@ class RSAKey {
     //#region PROTECTED
     // RSAKey.prototype.doPublic = RSADoPublic;
     // Perform raw public operation on "x": return x^e (mod n)
-    protected doPublic(x) {
+    protected doPublic(x:BigInteger) {
         return x.modPowInt(this.e, this.n);
     }
 
     // RSAKey.prototype.doPrivate = RSADoPrivate;
     // Perform raw private operation on "x": return x^d (mod n)
-    protected doPrivate(x) {
+    protected doPrivate(x:BigInteger) {
         if (this.p == null || this.q == null) {
             return x.modPow(this.d, this.n);
         }
@@ -235,13 +218,15 @@ class RSAKey {
     //#endregion
 
     //#region FIELDS
-    private n = null;
+
+    private n:BigInteger = null;
     private e = 0;
-    private d = null;
-    private p = null;
-    private q = null;
-    private dmp1 = null;
-    private dmq1 = null;
-    private coeff = null;
+    private d:BigInteger = null;
+    private p:BigInteger = null;
+    private q:BigInteger = null;
+    private dmp1:BigInteger = null;
+    private dmq1:BigInteger = null;
+    private coeff:BigInteger = null;
+
     //#endregion
 }
