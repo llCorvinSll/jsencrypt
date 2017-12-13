@@ -6,7 +6,7 @@
 import {SecureRandom} from "./rng";
 import {BigInteger, nbi} from "./BigInteger";
 
-export function parseBigInt(str:string, radix:number) {
+export function parseBigInt(str:string|number, radix:number) {
     return new BigInteger(str, radix);
 }
 

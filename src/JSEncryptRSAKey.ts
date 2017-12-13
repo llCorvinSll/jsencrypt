@@ -1,6 +1,9 @@
 import {parseBigInt, RSAKey} from "./lib/jsbn/rsa";
 import {BigInteger} from "./lib/jsbn/BigInteger";
 import {hex2b64} from "./lib/jsbn/base64";
+import Hex from "./lib/asn1js/hex";
+import Base64 from "./lib/asn1js/base64";
+import {ASN1} from "./lib/asn1js/asn1";
 
 
 interface IKeySeed {
@@ -151,36 +154,36 @@ export class JSEncryptRSAKey extends RSAKey {
                 this.n = parseBigInt(modulus, 16);
 
                 public_exponent = asn1.sub[2].getHexStringValue(); // int
-                this.e = parseInt(public_exponent, 16);
+                this.e = parseInt(public_exponent + "", 16);
 
-                var private_exponent = asn1.sub[3].getHexStringValue(); // bigint
+                const private_exponent = asn1.sub[3].getHexStringValue(); // bigint
                 this.d = parseBigInt(private_exponent, 16);
 
-                var prime1 = asn1.sub[4].getHexStringValue(); // bigint
+                const prime1 = asn1.sub[4].getHexStringValue(); // bigint
                 this.p = parseBigInt(prime1, 16);
 
-                var prime2 = asn1.sub[5].getHexStringValue(); // bigint
+                const prime2 = asn1.sub[5].getHexStringValue(); // bigint
                 this.q = parseBigInt(prime2, 16);
 
-                var exponent1 = asn1.sub[6].getHexStringValue(); // bigint
+                const exponent1 = asn1.sub[6].getHexStringValue(); // bigint
                 this.dmp1 = parseBigInt(exponent1, 16);
 
-                var exponent2 = asn1.sub[7].getHexStringValue(); // bigint
+                const exponent2 = asn1.sub[7].getHexStringValue(); // bigint
                 this.dmq1 = parseBigInt(exponent2, 16);
 
-                var coefficient = asn1.sub[8].getHexStringValue(); // bigint
+                const coefficient = asn1.sub[8].getHexStringValue(); // bigint
                 this.coeff = parseBigInt(coefficient, 16);
 
             } else if (asn1.sub.length === 2) {
 
                 // Parse the public key.
-                var bit_string = asn1.sub[1];
-                var sequence = bit_string.sub[0];
+                const bit_string = asn1.sub[1];
+                const sequence = bit_string.sub[0];
 
                 modulus = sequence.sub[0].getHexStringValue();
                 this.n = parseBigInt(modulus, 16);
                 public_exponent = sequence.sub[1].getHexStringValue();
-                this.e = parseInt(public_exponent, 16);
+                this.e = parseInt(public_exponent + "", 16);
 
             } else {
                 return false;
@@ -192,6 +195,93 @@ export class JSEncryptRSAKey extends RSAKey {
     }
 
 
+    /**
+     * Translate rsa parameters in a hex encoded string representing the rsa public key.
+     * The representation follow the ASN.1 notation :
+     * PublicKeyInfo ::= SEQUENCE {
+     *   algorithm       AlgorithmIdentifier,
+     *   PublicKey       BIT STRING
+     * }
+     * Where AlgorithmIdentifier is:
+     * AlgorithmIdentifier ::= SEQUENCE {
+     *   algorithm       OBJECT IDENTIFIER,     the OID of the enc algorithm
+     *   parameters      ANY DEFINED BY algorithm OPTIONAL (NULL for PKCS #1)
+     * }
+     * and PublicKey is a SEQUENCE encapsulated in a BIT STRING
+     * RSAPublicKey ::= SEQUENCE {
+     *   modulus           INTEGER,  -- n
+     *   publicExponent    INTEGER   -- e
+     * }
+     * @returns {string} DER Encoded String representing the rsa public key
+     * @private
+     */
+    public getPublicBaseKey() {
+        var options = {
+            'array': [
+                new KJUR.asn1.DERObjectIdentifier({'oid': '1.2.840.113549.1.1.1'}), //RSA Encryption pkcs #1 oid
+                new KJUR.asn1.DERNull()
+            ]
+        };
+        var first_sequence = new KJUR.asn1.DERSequence(options);
+
+        options = {
+            'array': [
+                new KJUR.asn1.DERInteger({'bigint': this.n}),
+                new KJUR.asn1.DERInteger({'int': this.e})
+            ]
+        };
+        var second_sequence = new KJUR.asn1.DERSequence(options);
+
+        options = {
+            'hex': '00' + second_sequence.getEncodedHex()
+        };
+        var bit_string = new KJUR.asn1.DERBitString(options);
+
+        options = {
+            'array': [
+                first_sequence,
+                bit_string
+            ]
+        };
+        var seq = new KJUR.asn1.DERSequence(options);
+        return seq.getEncodedHex();
+    }
+
+    /**
+     * Translate rsa parameters in a hex encoded string representing the rsa key.
+     *
+     * The translation follow the ASN.1 notation :
+     * RSAPrivateKey ::= SEQUENCE {
+     *   version           Version,
+     *   modulus           INTEGER,  -- n
+     *   publicExponent    INTEGER,  -- e
+     *   privateExponent   INTEGER,  -- d
+     *   prime1            INTEGER,  -- p
+     *   prime2            INTEGER,  -- q
+     *   exponent1         INTEGER,  -- d mod (p1)
+     *   exponent2         INTEGER,  -- d mod (q-1)
+     *   coefficient       INTEGER,  -- (inverse of q) mod p
+     * }
+     * @returns {string}  DER Encoded String representing the rsa private key
+     * @private
+     */
+    public getPrivateBaseKey() {
+        var options = {
+            'array': [
+                new KJUR.asn1.DERInteger({'int': 0}),
+                new KJUR.asn1.DERInteger({'bigint': this.n}),
+                new KJUR.asn1.DERInteger({'int': this.e}),
+                new KJUR.asn1.DERInteger({'bigint': this.d}),
+                new KJUR.asn1.DERInteger({'bigint': this.p}),
+                new KJUR.asn1.DERInteger({'bigint': this.q}),
+                new KJUR.asn1.DERInteger({'bigint': this.dmp1}),
+                new KJUR.asn1.DERInteger({'bigint': this.dmq1}),
+                new KJUR.asn1.DERInteger({'bigint': this.coeff})
+            ]
+        };
+        var seq = new KJUR.asn1.DERSequence(options);
+        return seq.getEncodedHex();
+    };
 }
 
 //#region HELPERS

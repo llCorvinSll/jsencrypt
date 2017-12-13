@@ -14,34 +14,42 @@
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 /*jshint browser: true, strict: true, immed: true, latedef: true, undef: true, regexdash: false */
-(function (undefined) {
-"use strict";
 
-var Base64 = {},
-    decoder;
+const Base64: {
+    decode?:(s:string) => number[];
+    unarmor?:(s:string) => number[];
+    re?:RegExp;
+} = {};
+let decoder:{[index:string]:number};
 
 Base64.decode = function (a) {
     var i;
     if (decoder === undefined) {
-        var b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
-            ignore = "= \f\n\r\t\u00A0\u2028\u2029";
+        const b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        const ignore = "= \f\n\r\t\u00A0\u2028\u2029";
         decoder = [];
-        for (i = 0; i < 64; ++i)
+        for (i = 0; i < 64; ++i) {
             decoder[b64.charAt(i)] = i;
-        for (i = 0; i < ignore.length; ++i)
+        }
+        for (i = 0; i < ignore.length; ++i) {
             decoder[ignore.charAt(i)] = -1;
+        }
     }
-    var out = [];
-    var bits = 0, char_count = 0;
+    const out = [];
+    let bits = 0;
+    let char_count = 0;
     for (i = 0; i < a.length; ++i) {
-        var c = a.charAt(i);
-        if (c == '=')
+        let c = a.charAt(i);
+        if (c == "=") {
             break;
+        }
         c = decoder[c];
-        if (c == -1)
+        if (c == -1) {
             continue;
-        if (c === undefined)
-            throw 'Illegal character at offset ' + i;
+        }
+        if (c === undefined) {
+            throw new Error("Illegal character at offset " + i);
+        }
         bits |= c;
         if (++char_count >= 4) {
             out[out.length] = (bits >> 16);
@@ -55,7 +63,7 @@ Base64.decode = function (a) {
     }
     switch (char_count) {
       case 1:
-        throw "Base64 encoding incomplete: at least 2 bits missing";
+        throw new Error("Base64 encoding incomplete: at least 2 bits missing");
       case 2:
         out[out.length] = (bits >> 10);
         break;
@@ -69,19 +77,18 @@ Base64.decode = function (a) {
 
 Base64.re = /-----BEGIN [^-]+-----([A-Za-z0-9+\/=\s]+)-----END [^-]+-----|begin-base64[^\n]+\n([A-Za-z0-9+\/=\s]+)====/;
 Base64.unarmor = function (a) {
-    var m = Base64.re.exec(a);
+    const m = Base64.re.exec(a);
     if (m) {
-        if (m[1])
+        if (m[1]) {
             a = m[1];
-        else if (m[2])
+        } else if (m[2]) {
             a = m[2];
-        else
-            throw "RegExp out of sync";
+        } else {
+            throw new Error("RegExp out of sync");
+        }
     }
     return Base64.decode(a);
 };
 
-// export globals
-if (typeof module !== 'undefined') { module.exports = Base64; } else { window.Base64 = Base64; }
-})();
+export default Base64;
 
