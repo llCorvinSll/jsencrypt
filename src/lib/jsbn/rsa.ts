@@ -6,7 +6,7 @@
 import {SecureRandom} from "./rng";
 import {BigInteger, nbi} from "./BigInteger";
 
-function parseBigInt(str:string, radix:number) {
+export function parseBigInt(str:string, radix:number) {
     return new BigInteger(str, radix);
 }
 
@@ -281,14 +281,14 @@ export class RSAKey {
 
     //#region FIELDS
 
-    private n:BigInteger = null;
-    private e = 0;
-    private d:BigInteger = null;
-    private p:BigInteger = null;
-    private q:BigInteger = null;
-    private dmp1:BigInteger = null;
-    private dmq1:BigInteger = null;
-    private coeff:BigInteger = null;
+    protected n:BigInteger = null;
+    protected e = 0;
+    protected d:BigInteger = null;
+    protected p:BigInteger = null;
+    protected q:BigInteger = null;
+    protected dmp1:BigInteger = null;
+    protected dmq1:BigInteger = null;
+    protected coeff:BigInteger = null;
 
     //#endregion
 }
